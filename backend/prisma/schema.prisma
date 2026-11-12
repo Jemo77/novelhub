@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id            String         @id @default(uuid())
+  nombre        String         @unique
+  email         String         @unique
+  password      String
+  rol           String         @default("lector") // "lector" o "autor"
+  avatar        String?
+  creadoEn      DateTime       @default(now())
+  // Relaciones
+  perfilAutor   PerfilAutor?
+  novelas       Novela[]
+  comics        Comic[]
+  libros        Libro[]
+  comprasNovela CompraCapituloNovela[]
+  comprasComic  CompraCapituloComic[]
+  comprasLibro  CompraLibro[]
+}
+
+// FASE 1 y 2: Perfil Público, Donaciones y Ads
+model PerfilAutor {
+  id          String  @id @default(uuid())
+  usuarioId   String  @unique
+  usuario     Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  
+  // Biografía pública
+  biografia   String? @db.Text
+
+  // Fase 3: Web3
+  walletWeb3  String? // Dirección pública (ej. 0x...) para recibir USDT
+
+  // Fase 2: Enrutador de Donaciones
+  cafecito    String?
+  paypal      String?
+  kofi        String?
+  patreon     String?
+  buyMeACoffee String?
+  githubSponsors String?
+  mercadoPago String?
+  twitter     String?
+
+  // Fase 1: Inyección de Iframes (Solo guardamos el ID del widget por seguridad)
+  adIdGeneral String? // Código A: Para /novela o /comic
+  adIdTop     String? // Código B: Arriba del capítulo
+  adIdBottom  String? // Código C: Abajo del capítulo
+}
+
+model Novela {
+  id               String           @id @default(uuid())
+  titulo           String
+  sinopsis         String
+  portada          String?
+  autorId          String
+  autor            Usuario          @relation(fields: [autorId], references: [id])
+  generos          String[]
+  vistas           Int              @default(0)
+  likes            Int              @default(0)
+  fechaPublicacion DateTime         @default(now())
+  capitulos        CapituloNovela[]
+  vistasTotales    VistaNovela[]
+}
+
+model CapituloNovela {
+  id               String                 @id @default(uuid())
+  novelaId         String
+  novela           Novela                 @relation(fields: [novelaId], references: [id], onDelete: Cascade)
+  numero           Int
+  titulo           String
+  contenido        String                 @db.Text
+  vistas           Int                    @default(0)
+  fechaPublicacion DateTime               @default(now())
+  
+  // FASE 3: Sistema Premium USDT
+  esPremium        Boolean                @default(false)
+  precioUSDT       Float?                 // Ej: 0.50
+  duracionHoras    Int?                   // Ej: 48 (null = permanente)
+
+  vistasTotales    VistaCapituloNovela[]
+  compras          CompraCapituloNovela[]
+}
+
+model Libro {
+  id            String        @id @default(uuid())
+  titulo        String
+  sinopsis      String        @db.Text
+  portada       String?
+  autorId       String
+  autor         Usuario       @relation(fields: [autorId], references: [id], onDelete: Cascade)
+  precioUSDT    Float
+  esPremium     Boolean       @default(true)
+  archivoKey    String
+  formato       String
+  creadoEn      DateTime      @default(now())
+  compras       CompraLibro[]
+}
+
+// Tabla pivote para registrar qué usuario compró qué capítulo de novela
+model CompraCapituloNovela {
+  id               String         @id @default(uuid())
+  usuarioId        String
+  usuario          Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  capituloId       String
+  capitulo         CapituloNovela @relation(fields: [capituloId], references: [id], onDelete: Cascade)
+  
+  txHash           String         @unique // Hash de la transacción blockchain para validación
+  precioPagado     Float
+  compradoEn       DateTime       @default(now())
+  expiraEn         DateTime?      // Calculado a partir de duracionHoras al momento de la compra
+
+  @@unique([usuarioId, capituloId]) // Un usuario no debería comprar el mismo capítulo dos veces si es permanente
+}
+
+model Comic {
+  id               String          @id @default(uuid())
+  titulo           String
+  sinopsis         String
+  portada          String?
+  autorId          String
+  autor            Usuario         @relation(fields: [autorId], references: [id])
+  generos          String[]
+  vistas           Int             @default(0)
+  likes            Int             @default(0)
+  fechaPublicacion DateTime        @default(now())
+  capitulos        CapituloComic[]
+  vistasTotales    VistaComic[]
+}
+
+model CapituloComic {
+  id               String                @id @default(uuid())
+  comicId          String
+  comic            Comic                 @relation(fields: [comicId], references: [id], onDelete: Cascade)
+  numero           Int
+  titulo           String
+  imagenes         String[]              
+  vistas           Int                   @default(0)
+  fechaPublicacion DateTime              @default(now())
+  
+  // FASE 3: Sistema Premium USDT
+  esPremium        Boolean               @default(false)
+  precioUSDT       Float?                // Ej: 0.50
+  duracionHoras    Int?                  // Ej: 48 (null = permanente)
+
+  vistasTotales    VistaCapituloComic[]
+  compras          CompraCapituloComic[]
+}
+
+// Tabla pivote para registrar qué usuario compró qué capítulo de cómic
+model CompraCapituloComic {
+  id               String        @id @default(uuid())
+  usuarioId        String
+  usuario          Usuario       @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  capituloId       String
+  capitulo         CapituloComic @relation(fields: [capituloId], references: [id], onDelete: Cascade)
+  
+  txHash           String        @unique
+  precioPagado     Float
+  compradoEn       DateTime      @default(now())
+  expiraEn         DateTime?
+
+  @@unique([usuarioId, capituloId])
+}
+
+model CompraLibro {
+  id           String   @id @default(uuid())
+  usuarioId    String
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  libroId      String
+  libro        Libro    @relation(fields: [libroId], references: [id], onDelete: Cascade)
+
+  txHash       String   @unique
+  precioPagado Float
+  compradoEn   DateTime @default(now())
+  expiraEn     DateTime?
+
+  @@unique([usuarioId, libroId])
+}
+
+// --- TABLAS DE VISTAS (Sin cambios) ---
+model VistaNovela {
+  id            String   @id @default(uuid())
+  identificador String
+  novelaId      String
+  creadoEn      DateTime @default(now())
+  novela        Novela   @relation(fields: [novelaId], references: [id], onDelete: Cascade)
+  @@unique([identificador, novelaId])
+}
+
+model VistaComic {
+  id            String   @id @default(uuid())
+  identificador String
+  comicId       String
+  creadoEn      DateTime @default(now())
+  comic         Comic    @relation(fields: [comicId], references: [id], onDelete: Cascade)
+  @@unique([identificador, comicId])
+}
+
+model VistaCapituloNovela {
+  id               String         @id @default(uuid())
+  identificador    String
+  capituloNovelaId String
+  creadoEn         DateTime       @default(now())
+  capitulo         CapituloNovela @relation(fields: [capituloNovelaId], references: [id], onDelete: Cascade)
+  @@unique([identificador, capituloNovelaId])
+}
+
+model VistaCapituloComic {
+  id              String        @id @default(uuid())
+  identificador   String
+  capituloComicId String
+  creadoEn        DateTime      @default(now())
+  capitulo        CapituloComic @relation(fields: [capituloComicId], references: [id], onDelete: Cascade)
+  @@unique([identificador, capituloComicId])
+}
